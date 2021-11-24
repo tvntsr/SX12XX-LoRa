@@ -29,7 +29,7 @@ uint16_t DTSegment = 0;                    //current segment number
 char DTfilenamebuff[DTfilenamesize];       //global buffer to store current filename
 uint8_t DTheader[16];                      //header array
 int DTLED = -1;                            //pin number for indicator LED, if -1 then not used
-
+uint8_t DTdata[245];                       //data/segment array
 
 //Transmitter mode only variables
 uint16_t TXNetworkID;                      //this is used to store the 'network' number, receiver must have the same networkID
@@ -52,7 +52,6 @@ bool DTFileOpened;                         //bool to flag when file has been ope
 uint16_t DTSegmentNext;                    //next segment expected
 uint16_t DTReceivedSegments;               //count of segments received
 uint16_t DTSegmentLast;                    //last segment processed
-uint8_t DTdata[245];                       //data/segment array
 
 
 //Transmitter mode functions
