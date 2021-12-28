@@ -47,10 +47,10 @@ SX128XLT LoRa;                              //create an SX128XLT library instanc
 //#define SDLIB                             //define SDLIB for SD.h or SDFATLIB for SDfat.h
 #define SDFATLIB
 
-#define USELORA                           //enable this define to use LoRa packets
-//#define USEFLRC                             //enable this define to use FLRC packets
+//#define USELORA                           //enable this define to use LoRa packets
+#define USEFLRC                             //enable this define to use FLRC packets
 
-#define PRINTSEGMENTNUM
+//#define PRINTSEGMENTNUM
 //#define DEBUG
 //#define DEBUGSD
 //#define ENABLEFILECRC                      //enable this define to uses and show file CRCs

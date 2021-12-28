@@ -26,8 +26,8 @@ const uint8_t SpreadingFactor = LORA_SF5;       //LoRa spreading factor
 const uint8_t CodeRate = LORA_CR_4_5;           //LoRa coding rate
 
 //*******  Setup FLRC modem parameters here ! ***************
-//const uint8_t BandwidthBitRate = FLRC_BR_1_300_BW_1_2;     //FLRC bandwidth and bit rate, 1.3Mbs
-const uint8_t BandwidthBitRate = FLRC_BR_0_260_BW_0_3;   //FLRC 260kbps
+const uint8_t BandwidthBitRate = FLRC_BR_1_300_BW_1_2;     //FLRC bandwidth and bit rate, 1.3Mbs
+//const uint8_t BandwidthBitRate = FLRC_BR_0_260_BW_0_3;   //FLRC 260kbps
 const uint8_t CodingRate = FLRC_CR_1_0;                    //FLRC coding rate
 const uint8_t BT = RADIO_MOD_SHAPING_BT_1_0;               //FLRC BT
 const uint32_t Syncword = 0x01234567;                      //FLRC uses syncword
