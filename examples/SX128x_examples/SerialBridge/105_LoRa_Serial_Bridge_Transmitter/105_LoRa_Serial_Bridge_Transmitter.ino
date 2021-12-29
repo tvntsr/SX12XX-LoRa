@@ -78,7 +78,6 @@ void loop()
   startuS = micros();
 
   while (((uint32_t) (micros() - startuS) < SerialTimeoutuS))
-    //while (millis() < timeoutuS)
   {
     if (SerialInput.available() > 0)
     {
