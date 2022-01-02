@@ -1,5 +1,5 @@
 /*******************************************************************************************************
-  Programs for Arduino - Copyright of the author Stuart Robinson - 30/12/21
+  Programs for Arduino - Copyright of the author Stuart Robinson - 01/01/22
 
   This program is supplied as is, it is up to the user of the program to decide if the program is
   suitable for the intended purpose and free from errors.
@@ -12,29 +12,57 @@
 
   The Arducam software (for the OV2640) on the transmitter uses program 238_StuartCAM_LoRa_Remote_Camera
   to take an image and then transfers it as a file across to this receiver, when the transfer is complete
-  the file, with the original name, is saved as a file on a SD card.
+  the file, with the original name, is saved as a file on a SD card. Then that file on the SD card is
+  transferred using the YModem protocol over a serial port to a PC. The serial transfer port is assumed
+  to be Serial, the same as the program upload port. The transfer can be monitored on the MonitorSerial
+  port which can be a hardware serial port such as Serial1, for Arduinos that have additional hardware
+  serial ports or a Software serial port.
 
-  Program uses an ILI931 TFT display to show progress of the transfer. Arduino DUE was used.
+  Program uses an ILI931 TFT display to show progress of the transfer. Arduino DUE was used in this
+  example.
 
   Serial monitor baud rate is set at 115200.
 *******************************************************************************************************/
 
 #include <SPI.h>
 
+//#define SDLIB                            //define SDLIB for SD.h or SDFATLIB for SDfat.h
+#define SDFATLIB
+
+#ifdef SDFATLIB
+#include <SdFat.h>
+SdFat SD;
+File dataFile;                             //name the file instance needed for SD library routines
+#endif
+
+#ifdef SDLIB
+#include <SD.h>
+File dataFile;                             //name the file instance needed for SD library routines
+#endif
+
 #include <SX127XLT.h>                      //SX12XX-LoRa library
 #include <ProgramLT_Definitions.h>         //part of SX12XX-LoRa library
 #include "Settings.h"                      //LoRa settings etc.
+
+#ifdef ENABLESOFTWARESERIAL
+#include <SoftwareSerial.h>
+SoftwareSerial MonitorSerial(RXpin, TXpin);
+#endif
+
+#ifndef ENABLESOFTWARESERIAL
+#define MonitorSerial MonitorPort          //define hardware monitor port to use for monitoring
+#endif
+
+#include "YModem.h"                        //YModem used SD dataFile
 #include <arrayRW.h>                       //part of SX12XX-LoRa library    
 
 SX127XLT LoRa;                             //create an SX127XLT library instance called LoRa
 
-//#define SDLIB                            //define SDLIB for SD.h or SDFATLIB for SDfat.h
-#define SDFATLIB
-
 #define PRINTSEGMENTNUM                    //enable this define to print segment numbers during data transfer
 //#define DEBUG                            //enable this define to show data transfer debug info
-#define ENABLEFILECRC                    //enable this define to use and show file CRCs
+#define ENABLEFILECRC                      //enable this define to use and show file CRCs
 //#define DISABLEPAYLOADCRC                //enable this define if you want to disable payload CRC checking
+#define ENABLEPCTRANSFER                   //enable this define for YModem transfer to PC 
 
 #include "Adafruit_GFX.h"                  //get library here > https://github.com/adafruit/Adafruit-GFX-Library  
 #include "Adafruit_ILI9341.h"              //get library here > https://github.com/adafruit/Adafruit_ILI9341
@@ -55,6 +83,7 @@ uint32_t DTDestinationFileLength;          //length of file written on the desti
 uint32_t DTSourceFileLength;               //length of file at source\transmitter
 uint32_t DTStartmS;                        //used for timeing transfers
 bool DTFileOpened;                         //bool to flag when file has been opened
+bool DTFileSaved = false;                  //bool to flag when file has been saved to SD
 uint16_t DTSegment = 0;                    //current segment number
 uint16_t DTSegmentNext;                    //next segment expected
 uint16_t DTReceivedSegments;               //count of segments received
@@ -66,30 +95,58 @@ int DTLED = -1;                            //pin number for indicator LED, if -1
 uint8_t DTheader[16];                      //header array
 uint8_t DTdata[245];                       //data/segment array
 
-#ifdef SDFATLIB
-#include <SdFat.h>
-SdFat SD;
-File dataFile;                             //name the file instance needed for SD library routines
-#endif
-
-#ifdef SDLIB
-#include <SD.h>
-File dataFile;                             //name the file instance needed for SD library routines
-#endif
-
 
 void loop()
 {
-  receiveaPacketDT();
+  uint32_t startmS = millis();
+
+  while (((uint32_t) (millis() - startmS) < ReceiveTimeoutmS ))
+  {
+    receiveaPacketDT();
+  }
+
+#ifdef ENABLEPCTRANSFER
+  //its been ReceiveTimeoutmS milliseconds since a packet has arrived, is there a filetransfer to do ?
+  if (DTFileSaved)
+  {
+    DTFileSaved = false;
+    MonitorSerial.println(F("File was saved - start YModem transfer to PC"));
+    setCursor(0, 4);
+    disp.print(F("YModemTX"));
+    digitalWrite(LED1, HIGH);
+    yModemSend(DTfilenamebuff, 1, 1);
+    setCursor(0, 4);
+    disp.print(F("        "));
+    digitalWrite(LED1, LOW);
+  }
+#endif
 }
 
 
 void printheader(uint8_t *hdr, uint8_t hdrsize)
 {
-  Serial.print(F("HeaderBytes,"));
-  Serial.print(hdrsize);
-  Serial.print(F(" "));
-  printarrayHEX(hdr, hdrsize);
+  MonitorSerial.print(F("HeaderBytes,"));
+  MonitorSerial.print(hdrsize);
+  MonitorSerial.print(F(" "));
+  printArrayHEX(hdr, hdrsize);
+}
+
+
+void printArrayHEX(uint8_t *buff, uint32_t len)
+{
+  uint8_t index, buffdata;
+
+  for (index = 0; index < len; index++)
+  {
+    buffdata = buff[index];
+    if (buffdata < 16)
+    {
+      MonitorSerial.print(F("0"));
+    }
+    MonitorSerial.print(buffdata, HEX);
+    MonitorSerial.print(F(" "));
+  }
+
 }
 
 
@@ -108,41 +165,41 @@ void readHeaderDT()
 
 void printSourceFileDetails()
 {
-  Serial.print(DTfilenamebuff);
-  Serial.print(F(" Source file length is "));
-  Serial.print(DTSourceFileLength);
-  Serial.println(F(" bytes"));
+  MonitorSerial.print(DTfilenamebuff);
+  MonitorSerial.print(F(" Source file length is "));
+  MonitorSerial.print(DTSourceFileLength);
+  MonitorSerial.println(F(" bytes"));
 #ifdef ENABLEFILECRC
-  Serial.print(F(" Source file CRC is 0x"));
-  Serial.println(DTSourceFileCRC, HEX);
+  MonitorSerial.print(F(" Source file CRC is 0x"));
+  MonitorSerial.println(DTSourceFileCRC, HEX);
 #endif
 }
 
 
 void printDestinationFileDetails()
 {
-  Serial.print(F("Destination file length "));
-  Serial.print(DTDestinationFileLength);
-  Serial.println(F(" bytes"));
+  MonitorSerial.print(F("Destination file length "));
+  MonitorSerial.print(DTDestinationFileLength);
+  MonitorSerial.println(F(" bytes"));
   if (DTDestinationFileLength != DTSourceFileLength)
   {
-    Serial.println(F("ERROR - file lengths do not match"));
+    MonitorSerial.println(F("ERROR - file lengths do not match"));
   }
   else
   {
-    Serial.println(F("File lengths match"));
+    MonitorSerial.println(F("File lengths match"));
   }
 
 #ifdef ENABLEFILECRC
-  Serial.print(F("Destination file CRC is 0x"));
-  Serial.println(DTDestinationFileCRC, HEX);
+  MonitorSerial.print(F("Destination file CRC is 0x"));
+  MonitorSerial.println(DTDestinationFileCRC, HEX);
   if (DTDestinationFileCRC != DTSourceFileCRC)
   {
-    Serial.println(F("ERROR - file CRCs do not match"));
+    MonitorSerial.println(F("ERROR - file CRCs do not match"));
   }
   else
   {
-    Serial.println(F("File CRCs match"));
+    MonitorSerial.println(F("File CRCs match"));
   }
 #endif
 }
@@ -153,8 +210,8 @@ bool processFileClose()
   // Code for closing local SD file
   uint32_t transferms;
 
-  Serial.print((char*) DTfilenamebuff);
-  Serial.println(F(" File close request"));
+  MonitorSerial.print((char*) DTfilenamebuff);
+  MonitorSerial.println(F(" File close request"));
 
   if (DTFileOpened)                                     //check if file has been opened, close it if it is
   {
@@ -162,11 +219,11 @@ bool processFileClose()
     {
       DTSD_closeFile();
       transferms = millis() - DTStartmS;
-      Serial.print(F("Transfer time "));
-      Serial.print(transferms);
-      Serial.print(F("mS"));
-      Serial.println();
-      Serial.println(F("File closed"));
+      MonitorSerial.print(F("Transfer time "));
+      MonitorSerial.print(transferms);
+      MonitorSerial.print(F("mS"));
+      MonitorSerial.println();
+      MonitorSerial.println(F("File closed"));
 
       setCursor(0, 0);
       disp.print(F("Transfer finished"));
@@ -175,7 +232,7 @@ bool processFileClose()
       setCursor(0, 3);
       disp.print(transferms);
       disp.print(F(" mS"));
-
+      DTFileSaved = true;
       DTFileOpened = false;
       DTDestinationFileLength = DTSD_openFileRead(DTfilenamebuff);
 #ifdef ENABLEFILECRC
@@ -190,13 +247,13 @@ bool processFileClose()
   }
   else
   {
-    Serial.println(F("File already closed"));
+    MonitorSerial.println(F("File already closed"));
     delay(DuplicatedelaymS);
   }
 
   delay(ACKdelaymS);
 #ifdef DEBUG
-  Serial.println(F("Sending ACK"));
+  MonitorSerial.println(F("Sending ACK"));
 #endif
   DTheader[0] = DTFileCloseACK;
 
@@ -210,11 +267,13 @@ bool processFileClose()
     digitalWrite(DTLED, LOW);
   }
 
-  Serial.println();
+
+
+  MonitorSerial.println();
 #ifdef DEBUG
   DTSD_printDirectory();
-  Serial.println();
-  Serial.println();
+  MonitorSerial.println();
+  MonitorSerial.println();
 #endif
   return true;
 }
@@ -223,30 +282,30 @@ bool processFileClose()
 bool processFileOpen(uint8_t *buff, uint8_t filenamesize)
 {
   // Code for opening local SD file
-
+  DTFileSaved = false;
   beginarrayRW(DTheader, 4);                      //start buffer read at location 4
   DTSourceFileLength = arrayReadUint32();         //load the file length of the file being sent
   DTSourceFileCRC = arrayReadUint16();            //load the CRC of the file being sent
   memset(DTfilenamebuff, 0, DTfilenamesize);      //clear DTfilenamebuff to all 0s
   memcpy(DTfilenamebuff, buff, filenamesize);     //copy received DTdata into DTfilenamebuff
-  Serial.print((char*) DTfilenamebuff);
-  Serial.print(F(" SD File Open request"));
-  Serial.println();
+  MonitorSerial.print((char*) DTfilenamebuff);
+  MonitorSerial.print(F(" SD File Open request"));
+  MonitorSerial.println();
   printSourceFileDetails();
 
   if (DTSD_openNewFileWrite(DTfilenamebuff))      //open file for write at beginning, delete if it exists
   {
-    Serial.print((char*) DTfilenamebuff);
-    Serial.println(F(" DT File Opened OK"));
-    Serial.println(F("Waiting transfer"));
+    MonitorSerial.print((char*) DTfilenamebuff);
+    MonitorSerial.println(F(" DT File Opened OK"));
+    MonitorSerial.println(F("Waiting transfer"));
     DTSegmentNext = 0;                            //since file is opened the next sequence should be the first
     DTFileOpened = true;
     DTStartmS = millis();
   }
   else
   {
-    Serial.print((char*) DTfilenamebuff);
-    Serial.println(F(" File Open fail"));
+    MonitorSerial.print((char*) DTfilenamebuff);
+    MonitorSerial.println(F(" File Open fail"));
     DTFileOpened = false;
     return false;
   }
@@ -270,7 +329,7 @@ bool processFileOpen(uint8_t *buff, uint8_t filenamesize)
   DTStartmS = millis();
   delay(ACKdelaymS);
 #ifdef DEBUG
-  Serial.println(F("Sending ACK"));
+  MonitorSerial.println(F("Sending ACK"));
 #endif
   DTheader[0] = DTFileOpenACK;                      //set the ACK packet type
 
@@ -298,11 +357,11 @@ bool processSegmentWrite()
   {
     //something is wrong, have received a request to write a segment but there is no file opened
     //need to reject the segment write with a restart NACK
-    Serial.println();
-    Serial.println(F("***************************************************"));
-    Serial.println(F("Error - Segment write with no file open - send NACK"));
-    Serial.println(F("***************************************************"));
-    Serial.println();
+    MonitorSerial.println();
+    MonitorSerial.println(F("***************************************************"));
+    MonitorSerial.println(F("Error - Segment write with no file open - send NACK"));
+    MonitorSerial.println(F("***************************************************"));
+    MonitorSerial.println();
     DTheader[0] = DTStartNACK;
     delay(ACKdelaymS);
     delay(DuplicatedelaymS);
@@ -322,23 +381,22 @@ bool processSegmentWrite()
   if (DTSegment == DTSegmentNext)
   {
     DTSD_writeSegmentFile(DTdata, RXDataarrayL);
-    //DTSD_fileFlush();
 
 #ifdef PRINTSEGMENTNUM
-    //Serial.print(F("Segment,"));
-    Serial.println(DTSegment);
-    setCursor(0, 7);
-    disp.print(F("    "));
-    setCursor(0, 7);
-    disp.print(DTSegment);
+    MonitorSerial.println(DTSegment);
+    //only enable Segment number prints if using a fast Arduino, if using a slow Arduino such
+    //as a 8Mhz Pro Mini, the prints to display will cause missed segments
+    //setCursor(0, 7);
+    //disp.print(F("    "));
+    //setCursor(0, 7);
+    //disp.print(DTSegment);
 #endif
 
 #ifdef DEBUG
-    Serial.print(F("  Bytes,"));
-    Serial.print(RXDataarrayL);
-    //printPacketDetails();
+    MonitorSerial.print(F("  Bytes,"));
+    MonitorSerial.print(RXDataarrayL);
     printPacketRSSI();
-    Serial.println(F(" SendACK"));
+    MonitorSerial.println(F(" SendACK"));
 #endif
 
     DTheader[0] = DTSegmentWriteACK;
@@ -362,9 +420,9 @@ bool processSegmentWrite()
 
   if (DTSegment == DTSegmentLast)
   {
-    Serial.print(F("ERROR segment "));
-    Serial.print(DTSegment);
-    Serial.println(F(" already received "));
+    MonitorSerial.print(F("ERROR segment "));
+    MonitorSerial.print(DTSegment);
+    MonitorSerial.println(F(" already received "));
     delay(DuplicatedelaymS);
 #ifdef DEBUG
     printPacketDetails();
@@ -388,11 +446,11 @@ bool processSegmentWrite()
 
   if (DTSegment != DTSegmentNext )
   {
-    Serial.print(F(" ERROR Received Segment "));
-    Serial.print(DTSegment);
-    Serial.print(F(" expected "));
-    Serial.print(DTSegmentNext);
-    Serial.print(F(" "));
+    MonitorSerial.print(F(" ERROR Received Segment "));
+    MonitorSerial.print(DTSegment);
+    MonitorSerial.print(F(" expected "));
+    MonitorSerial.print(DTSegmentNext);
+    MonitorSerial.print(F(" "));
 
 #ifdef DEBUG
     printPacketDetails();
@@ -402,20 +460,20 @@ bool processSegmentWrite()
     DTheader[0] = DTSegmentWriteNACK;
     DTheader[4] = lowByte(DTSegmentNext);
     DTheader[5] = highByte(DTSegmentNext);
-    Serial.print(F(" Send NACK for segment "));
-    Serial.print(DTSegmentNext);
+    MonitorSerial.print(F(" Send NACK for segment "));
+    MonitorSerial.print(DTSegmentNext);
     delay(ACKdelaymS);
     delay(DuplicatedelaymS);                   //add an extra delay here to stop repeated segment sends
-    Serial.println();
-    Serial.println();
-    Serial.println(F("*****************************************"));
-    Serial.print(F("Transmit restart request for segment "));
-    Serial.println(DTSegmentNext);
+    MonitorSerial.println();
+    MonitorSerial.println();
+    MonitorSerial.println(F("*****************************************"));
+    MonitorSerial.print(F("Transmit restart request for segment "));
+    MonitorSerial.println(DTSegmentNext);
     printheader(DTheader, RXHeaderL);
-    Serial.println();
-    Serial.println(F("*****************************************"));
-    Serial.println();
-    Serial.flush();
+    MonitorSerial.println();
+    MonitorSerial.println(F("*****************************************"));
+    MonitorSerial.println();
+    MonitorSerial.flush();
     if (DTLED >= 0)
     {
       digitalWrite(DTLED, HIGH);
@@ -435,18 +493,18 @@ void printPacketDetails()
 {
   PacketRSSI = LoRa.readPacketRSSI();
   PacketSNR = LoRa.readPacketSNR();
-  Serial.print(F(" RSSI,"));
-  Serial.print(PacketRSSI);
-  Serial.print(F("dBm"));
+  MonitorSerial.print(F(" RSSI,"));
+  MonitorSerial.print(PacketRSSI);
+  MonitorSerial.print(F("dBm"));
 
 #ifdef DEBUG
-  Serial.print(F(",SNR,"));
-  Serial.print(PacketSNR);
-  Serial.print(F("dBm,RXOKCount,"));
-  Serial.print(DTReceivedSegments);
-  Serial.print(F(",RXErrs,"));
-  Serial.print(RXErrors);
-  Serial.print(F(" RX"));
+  MonitorSerial.print(F(",SNR,"));
+  MonitorSerial.print(PacketSNR);
+  MonitorSerial.print(F("dBm,RXOKCount,"));
+  MonitorSerial.print(DTReceivedSegments);
+  MonitorSerial.print(F(",RXErrs,"));
+  MonitorSerial.print(RXErrors);
+  MonitorSerial.print(F(" RX"));
   printheader(DTheader, RXHeaderL);
 #endif
 }
@@ -455,9 +513,9 @@ void printPacketDetails()
 void printPacketRSSI()
 {
   PacketRSSI = LoRa.readPacketRSSI();
-  Serial.print(F(" RSSI,"));
-  Serial.print(PacketRSSI);
-  Serial.print(F("dBm"));
+  MonitorSerial.print(F(" RSSI,"));
+  MonitorSerial.print(PacketRSSI);
+  MonitorSerial.print(F("dBm"));
 }
 
 
@@ -465,8 +523,8 @@ void printSeconds()
 {
   float secs;
   secs = ( (float) millis() / 1000);
-  Serial.print(secs, 2);
-  Serial.print(F(" "));
+  MonitorSerial.print(secs, 2);
+  MonitorSerial.print(F(" "));
 }
 
 
@@ -529,11 +587,11 @@ bool receiveaPacketDT()
 
     RXErrors++;
 #ifdef DEBUG
-    Serial.print(F("PacketError"));
+    MonitorSerial.print(F("PacketError"));
     printPacketDetails();
     LoRa.printReliableStatus();
     LoRa.printIrqStatus();
-    Serial.println();
+    MonitorSerial.println();
 #endif
 
     if (DTLED >= 0)
@@ -572,7 +630,7 @@ bool DTSD_initSD(uint8_t CSpin)
 void DTSD_printDirectory()
 {
   dataFile = SD.open("/");
-  Serial.println(F("Card directory"));
+  MonitorSerial.println(F("Card directory"));
   SD.ls("/", LS_R);
 }
 #endif
@@ -583,7 +641,7 @@ void DTSD_printDirectory()
 {
   dataFile = SD.open("/");
 
-  Serial.println(F("Card directory"));
+  MonitorSerial.println(F("Card directory"));
 
   while (true)
   {
@@ -593,21 +651,21 @@ void DTSD_printDirectory()
       //no more files
       break;
     }
-    Serial.print(entry.name());
+    MonitorSerial.print(entry.name());
     if (entry.isDirectory())
     {
-      Serial.println(F("/"));
+      MonitorSerial.println(F("/"));
       DTSD_printDirectory();
     }
     else
     {
       //files have sizes, directories do not
-      Serial.print(F("\t\t"));
-      Serial.println(entry.size(), DEC);
+      MonitorSerial.print(F("\t\t"));
+      MonitorSerial.println(entry.size(), DEC);
     }
     entry.close();
   }
-  Serial.println();
+  MonitorSerial.println();
 }
 #endif
 
@@ -627,21 +685,21 @@ bool DTSD_openNewFileWrite(char *buff)
 {
   if (SD.exists(buff))
   {
-    Serial.print(buff);
-    Serial.println(F(" File exists - deleting"));
+    MonitorSerial.print(buff);
+    MonitorSerial.println(F(" File exists - deleting"));
     SD.remove(buff);
   }
 
   if (dataFile = SD.open(buff, FILE_WRITE))
   {
-    Serial.print(buff);
-    Serial.println(F(" SD File opened"));
+    MonitorSerial.print(buff);
+    MonitorSerial.println(F(" SD File opened"));
     return true;
   }
   else
   {
-    Serial.print(buff);
-    Serial.println(F(" ERROR opening file"));
+    MonitorSerial.print(buff);
+    MonitorSerial.println(F(" ERROR opening file"));
     return false;
   }
 }
@@ -733,10 +791,11 @@ void setup()
     pinMode(TOUCHCS, OUTPUT);
   }
 
-  Serial.begin(115200);
-  Serial.println();
-  Serial.println(__FILE__);
-  Serial.println();
+  YModemnSerial.begin(115200);
+  MonitorSerial.begin(9600);
+  MonitorSerial.println();
+  MonitorSerial.println(__FILE__);
+  MonitorSerial.println();
 
   SPI.begin();
 
@@ -746,7 +805,7 @@ void setup()
   }
   else
   {
-    Serial.println(F("LoRa device error"));
+    MonitorSerial.println(F("LoRa device error"));
     while (1)
     {
       led_Flash(50, 50);                          //long fast speed flash indicates device error
@@ -754,26 +813,20 @@ void setup()
   }
 
   LoRa.setupLoRa(Frequency, Offset, SpreadingFactor, Bandwidth, CodeRate, Optimisation);
-  LoRa.printOperatingSettings();
-  Serial.println();
-  LoRa.printModemSettings();
-  Serial.println();
 
-  Serial.print(F("Initializing SD card..."));
+  MonitorSerial.print(F("Initializing SD card..."));
 
   if (DTSD_initSD(SDCS))
   {
-    Serial.println(F("SD Card initialized."));
+    MonitorSerial.println(F("SD Card initialized."));
   }
   else
   {
-    Serial.println(F("SD Card failed, or not present."));
+    MonitorSerial.println(F("SD Card failed, or not present."));
     while (1) led_Flash(100, 50);
   }
 
-  Serial.println();
-  DTSD_printDirectory();
-  Serial.println();
+  MonitorSerial.println();
 
 #ifdef DISABLEPAYLOADCRC
   LoRa.setReliableConfig(NoReliableCRC);
@@ -781,11 +834,11 @@ void setup()
 
   if (LoRa.getReliableConfig(NoReliableCRC))
   {
-    Serial.println(F("Payload CRC disabled"));
+    MonitorSerial.println(F("Payload CRC disabled"));
   }
   else
   {
-    Serial.println(F("Payload CRC enabled"));
+    MonitorSerial.println(F("Payload CRC enabled"));
   }
 
   disp.begin();
@@ -800,5 +853,4 @@ void setup()
   DTFileOpened = false;
 
   Serial.println(F("LoRa file transfer receiver ready"));
-  Serial.println();
 }

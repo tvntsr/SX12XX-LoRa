@@ -50,25 +50,25 @@
 #include <SX127XLT.h>                            //include the appropriate library  
 #include <ProgramLT_Definitions.h>
 SX127XLT LoRa;                                   //create a library class instance called LoRa
-
-#include "Settings.h"                            //LoRa and program settings  
-#include <arrayRW.h>                             //part of SX12XX library
-#include <ATLibraryIRQ.h>                        //part of SX12XX library
-#include "esp_camera.h"
+#include "Settings.h"                            //LoRa and program settings 
 
 RTC_DATA_ATTR int16_t bootCount = 0;             //variables to save in RTC ram
 RTC_DATA_ATTR uint16_t sleepcount = 0;
 
 RTC_DATA_ATTR uint16_t pictureNumber = 0;        //number of picture taken, set to 0 on reset
 
-camera_config_t config;                          //stores the camera configuration parameters
-
-uint8_t buff[] = "ESP32CAM Awake";               //the message to send
+uint8_t buff[] = "ESP32CAM Awake";               //the Awake message to send
 
 //#define PRINTSEGMENTNUM
 //#define DEBUG                                  //enable this define to show data transfer debug info
 //#define ENABLEARRAY                            //enable this define to uses and show file CRCs
 //#define DISABLEPAYLOADCRC                      //enable this define if you want to disable payload CRC checking
+#define ENABLEFILECRC                            //enable this define to use and show file CRCs
+
+#include <arrayRW.h>                             //part of SX12XX library
+#include <ATLibraryIRQ.h>                        //part of SX12XX library
+#include "esp_camera.h"
+camera_config_t config;                          //stores the camera configuration parameters
 
 
 void loop()
@@ -194,7 +194,7 @@ uint16_t takePhotoSend(uint8_t num, uint32_t gapmS)
   for (index = 1; index <= num; index++)                     //take a number of pictures, send last
   {
     pictureNumber++;
-    String path = "/pic" + String(pictureNumber) + ".jpg";
+    String path = "pic" + String(pictureNumber) + ".jpg";
     Serial.printf("Picture file name %s\n", path.c_str());
 
     camera_fb_t  * fb = esp_camera_fb_get();
@@ -320,9 +320,6 @@ void whiteFlash(uint16_t flashes, uint16_t ondelaymS, uint16_t offdelaymS)
   }
   pinMode(WHITELED, INPUT);                     //setup pin as input
 }
-
-
-
 
 
 void setup()

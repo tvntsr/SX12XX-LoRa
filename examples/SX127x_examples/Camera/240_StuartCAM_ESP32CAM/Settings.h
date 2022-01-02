@@ -6,10 +6,10 @@
 *******************************************************************************************************/
 
 
-#define NSS 13                //select on LoRa device
-#define NRESET 4              //reset pin on LoRa device
-#define SCK 14                //SCK on SPI3
-#define MISO 15               //MISO on SPI3 
+#define NSS 12                //select on LoRa device
+#define NRESET 14             //reset pin on LoRa device
+#define SCK 4                 //SCK on SPI3
+#define MISO 13               //MISO on SPI3 
 #define MOSI 2                //MOSI on SPI3
 #define REDLED 33             //pin number for ESP32CAM on board red LED, set logic level low for on
 #define WHITELED 4            //pin number for ESP32CAM on board white LED, set logic level high for on
