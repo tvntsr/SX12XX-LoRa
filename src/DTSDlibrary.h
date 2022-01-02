@@ -38,6 +38,7 @@ uint16_t DTSD_createFile(char *buff);
 uint16_t DTSD_fileCRCCCITT();
 void DTSD_fileFlush();
 void DTSD_closeFile();
+void printDirectorySD(File dir, int numTabs);
 
 
 bool DTSD_dumpFileASCII(char *buff)
@@ -159,8 +160,8 @@ void DTSD_printDirectory()
 #ifdef SDLIB
 void DTSD_printDirectory()
 {
-  dataFile = SD.open("/");
 
+  /*
   Serial.println(F("Card directory"));
 
   while (true)
@@ -185,10 +186,51 @@ void DTSD_printDirectory()
     }
     entry.close();
   }
+  */
+  
+  dataFile = SD.open("/");
+
+  printDirectorySD(dataFile, 0);
+  
   Serial.println();
 }
-#endif
 
+
+void printDirectorySD(File dir, int numTabs)
+{
+
+  while (true)
+  {
+    File entry =  dir.openNextFile();
+
+    if (! entry)
+    {
+      //no more files
+      break;
+    }
+
+    for (uint8_t i = 0; i < numTabs; i++)
+    {
+      Serial.print('\t');
+    }
+
+    Serial.print(entry.name());
+
+    if (entry.isDirectory())
+    {
+      Serial.println("/");
+      printDirectorySD(entry, numTabs + 1);
+    }
+    else
+    {
+      // files have sizes, directories do not
+      Serial.print("\t\t");
+      Serial.println(entry.size(), DEC);
+    }
+    entry.close();
+  }
+}
+#endif
 
 bool DTSD_dumpSegmentHEX(uint8_t segmentsize)
 {
