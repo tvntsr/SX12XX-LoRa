@@ -7,7 +7,7 @@
 
 /*******************************************************************************************************
   Program Operation - This is a program that transfers a file from an Arduinos SD card to a folder on a
-  PC that is connected to the Arduino via a Seril port. The transfer process uses the YModem protocol
+  PC that is connected to the Arduino via a Serial port. The transfer process uses the YModem protocol
   and the PC receives the file using the Tera Term Serial terminal program.
 
   Instructions for using the program are to be found here;
