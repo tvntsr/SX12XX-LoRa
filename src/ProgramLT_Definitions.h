@@ -13,7 +13,7 @@
 */
 
 const char Sensor1 = '!';               //Sensor packet1
-const char HABPacket = '$';             //HAB style CSV ASCII packet 
+const char HABPacket = '$';             //HAB style CSV ASCII packet
 const char Broadcast = '*';             //Broadcast destination address
 const char RControl1 = 'D';             //Remote Control packet
 const char TestMode1 = '1';             //used to switch to Testmode1 settings
@@ -28,19 +28,42 @@ const char ACK = 'A';                   //Acknowledge
 const char NACK = 'N';                  //Not Acknowledge, error
 const char AFC = 'a';                   //Packet sent for AFC purposes
 
-const uint8_t Reliable = 0x80;          //this packet type indicates reliable data packet
-const uint8_t ReliableACK = 0x81;       //this packet type indicates reliable data packet acknowledge
-const uint8_t FTtype = 0xF0;            //FTsubtype file transfer type
-const uint8_t FTstart = 0xF1;           //FTsubtype file transfer start information, filename etc
-const uint8_t FTsegment = 0xF2;         //FTsubtype packet contains a numbered segment
-const uint8_t FTACK = 0xF3;             //FTsubtype ACK response for file transfers
-const uint8_t FTNACK = 0xF4;            //FTsubtype NACK response for file transfers
-const uint8_t FTclose  = 0xF5;          //FTsubtype request from TX to close file, transfer finished
-const uint8_t FTrestart  = 0xF6;        //FTsubtype request from RX to restart current file transfer
+
+//file transfer packetype definitions
+
+#define DTSegmentWrite 0xA0                //packet type for segment write
+#define DTSegmentWriteACK 0xA1             //packet type for segment write ACK
+#define DTSegmentWriteNACK 0xA2            //packet type for segment write NACK
+#define DTSegmentWriteHeaderL 6
+
+#define DTFileOpen 0xA4                    //packet type for file open, filename
+#define DTFileOpenACK 0xA5                 //packet type for file open, filename ACK
+#define DTFileOpenNACK 0xA6                //packet type for file open, filename NACK
+#define DTFileOpenHeaderL 12
+
+#define DTFileClose 0xA8                   //packet type for file close, filename
+#define DTFileCloseACK 0xA9                //packet type for file close, filename ACK
+#define DTFileCloseNACK 0xAA               //packet type for file close, filename NACK
+#define DTFileCloseHeaderL 12
+
+#define DTDataSeek 0xAC                    //packet type for seek to date or file position
+#define DTDataSeekACK 0xAD                 //packet type for seek to date or file position ACK
+#define DTDataSeekNACK 0xAE                //packet type for seek to date or file position NACK
+#define DTDataSeekHeaderL 9
+
+#define DTStart 0xB0                       //packet type for start (or restart) file transfer
+#define DTStartACK 0xB1                    //packet type for start (or restart) ACK
+#define DTStartNACK 0xB2                   //packet type for start (or restart) NACK
+#define DTStartHeaderL 6                   //header length for start (or restart) file transfer
+
+#define DTWake 0xB4                        //packet type for wake of node
+#define DTWakeACK 0xB5                     //packet type for wake of node ACK
+#define DTWakeNACK 0xB6                     //packet type for wake of node ACK
+#define DTWakeHeaderL 6                    //header length for for wake of node
 
 //GPS Tracker Status byte settings
 const uint8_t GPSFix = 0;               //flag bit set when GPS has a current fix
-const uint8_t GPSConfigError = 1;       //flag bit set to indicate cannot configure GPS or wrong configuration 
+const uint8_t GPSConfigError = 1;       //flag bit set to indicate cannot configure GPS or wrong configuration
 const uint8_t CameraError = 2;          //flag bit indicating a camera device error
 const uint8_t GPSError = 3;             //flag bit set to indicate GPS error, response timeout for instance
 const uint8_t LORAError = 4;            //flag bit indication a lora device error
@@ -108,16 +131,8 @@ const uint8_t DozeEnable = 4;             //bit num to set in config byte to put
 const uint8_t GPSHotFix = 7;              //bit when set enables GPS Hot Fix mode.
 
 
-/*
-******************************************************************************************************
-  Values for reliable transmit\receive errors
-******************************************************************************************************
-*/
-const uint16_t packettypeErr = 0x01;
-const uint16_t destErr = 0x02;
-const uint16_t sourceErr = 0x04;
-const uint16_t timeoutErr = 0x08;
-const uint16_t IDErr = 0x10;
-const uint16_t crcErr = 0x20;
-const uint16_t seqErr = 0x40;
-const uint16_t packetErr = 0x80;
+#define CRC_ON 1
+#define CRC_OFF 0
+
+#define ACK_ON 1
+#define ACK_OFF 0
