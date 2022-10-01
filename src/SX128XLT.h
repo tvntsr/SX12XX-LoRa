@@ -56,7 +56,7 @@ class SX128XLT  {
     {
         return returnBandwidth(savedModParam2);
     }
-
+    uint8_t getFlrcBandwidth() const;
     uint8_t getLoRaCodingRate();
     uint8_t getInvertIQ();
     uint16_t getPreamble();
@@ -260,6 +260,13 @@ class SX128XLT  {
     uint8_t _ReliableFlags;         //Reliable flags byte
     uint8_t _ReliableConfig;        //Reliable config byte
 };
+
+
+inline
+uint8_t SX128XLT::getFlrcBandwidth() const
+{
+	return savedModParam1;
+}
 
 inline
 uint8_t SX128XLT::getLoRaSF()
